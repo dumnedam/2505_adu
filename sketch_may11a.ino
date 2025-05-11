@@ -14,11 +14,11 @@ const unsigned long holdTime  = 10000;
 // 부저 최대 지속 시간(ms)
 const unsigned long buzzerDur = 30000;
 // 루프 딜레이(ms)
-const int loopDelay           = 200;
+const int loopDelay           = 100;
 // BLE 스캔 타임아웃(ms)
-const unsigned long scanTimeout = 200;
+const unsigned long scanTimeout = 50;   // 타임아웃 단축
 // BLE 스캔 주기(ms)
-const unsigned long scanPeriod = 100;
+const unsigned long scanPeriod = 100;   // 스캔 주기 단축
 
 float prevX, prevY, prevZ;
 unsigned long lastOwnerSeen   = 0;
@@ -52,7 +52,7 @@ void setup() {
     lcd.setCursor(0,0); lcd.print("BLE init FAIL");
     while (true);
   }
-  BLE.scan(true);
+  BLE.scan(true);  // 연속 스캔 시작
 
   lcd.clear();
   lcd.setCursor(0,0); lcd.print("System Ready");
@@ -63,25 +63,21 @@ void setup() {
 void loop() {
   unsigned long now = millis();
 
-  // 스캔 주기 제어 (100ms마다 스캔)
+  // 스캔 주기 제어
   if (now - lastScanTime >= scanPeriod) {
     lastScanTime = now;
-    unsigned long scanStart = now;
 
-    // Owner 광고 감지 (타임아웃 단축)
+    // Owner 광고 감지 (비블로킹 방식)
     BLEDevice dev = BLE.available();
-    while (dev && (now - scanStart < scanTimeout)) {
+    if (dev) {  // 한 번에 하나의 디바이스만 처리
       if (dev.hasLocalName()) {
         String name = dev.localName();
         if (name == "owner") {
           lastOwnerSeen = now;
           ownerInitialized = true;
           Serial.println("[Owner] Detected");
-          break;  // 소유자를 찾으면 즉시 스캔 중단
         }
       }
-      dev = BLE.available();
-      now = millis();
     }
   }
 
@@ -90,9 +86,14 @@ void loop() {
 
   // 1행: Owner 상태
   lcd.setCursor(0,0);
-  lcd.print(ownerPresent
-            ? "Owner Present   "
-            : "Owner Not Found ");
+  if (ownerPresent) {
+    unsigned long remainingTime = (holdTime - (now - lastOwnerSeen)) / 1000;
+    lcd.print("Owner ");
+    lcd.print(remainingTime);
+    lcd.print("s     ");
+  } else {
+    lcd.print("NO Owner ");
+  }
 
   Serial.print("[Owner] ");
   Serial.print(ownerPresent ? "Present, " : "NotFound, ");
