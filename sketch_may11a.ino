@@ -15,10 +15,16 @@ const unsigned long holdTime  = 10000;
 const unsigned long buzzerDur = 30000;
 // 루프 딜레이(ms)
 const int loopDelay           = 200;
+// BLE 스캔 타임아웃(ms)
+const unsigned long scanTimeout = 200;
+// BLE 스캔 주기(ms)
+const unsigned long scanPeriod = 100;
 
 float prevX, prevY, prevZ;
 unsigned long lastOwnerSeen   = 0;
 bool          firstIgnored    = false;
+bool          ownerInitialized = false;
+unsigned long lastScanTime    = 0;  // 마지막 스캔 시간
 
 unsigned long buzzerStart     = 0;
 bool          buzzerActive    = false;
@@ -57,17 +63,30 @@ void setup() {
 void loop() {
   unsigned long now = millis();
 
-  // Owner 광고 감지
-  BLEDevice dev = BLE.available();
-  while (dev) {
-    if (dev.hasLocalName() && dev.localName() == "owner") {
-      lastOwnerSeen = now;
-      Serial.println("[Owner] Detected");
+  // 스캔 주기 제어 (100ms마다 스캔)
+  if (now - lastScanTime >= scanPeriod) {
+    lastScanTime = now;
+    unsigned long scanStart = now;
+
+    // Owner 광고 감지 (타임아웃 단축)
+    BLEDevice dev = BLE.available();
+    while (dev && (now - scanStart < scanTimeout)) {
+      if (dev.hasLocalName()) {
+        String name = dev.localName();
+        if (name == "owner") {
+          lastOwnerSeen = now;
+          ownerInitialized = true;
+          Serial.println("[Owner] Detected");
+          break;  // 소유자를 찾으면 즉시 스캔 중단
+        }
+      }
+      dev = BLE.available();
+      now = millis();
     }
-    dev = BLE.available();
   }
 
-  bool ownerPresent = (now - lastOwnerSeen) < holdTime;
+  // 소유자 초기화가 완료된 경우에만 상태 확인
+  bool ownerPresent = ownerInitialized && (now - lastOwnerSeen) < holdTime;
 
   // 1행: Owner 상태
   lcd.setCursor(0,0);
