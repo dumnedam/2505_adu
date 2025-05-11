@@ -19,12 +19,15 @@ const int loopDelay           = 100;
 const unsigned long scanTimeout = 50;   // 타임아웃 단축
 // BLE 스캔 주기(ms)
 const unsigned long scanPeriod = 100;   // 스캔 주기 단축
+// LCD 업데이트 주기(ms)
+const unsigned long lcdUpdatePeriod = 500;  // LCD 업데이트 주기
 
 float prevX, prevY, prevZ;
 unsigned long lastOwnerSeen   = 0;
 bool          firstIgnored    = false;
 bool          ownerInitialized = false;
 unsigned long lastScanTime    = 0;  // 마지막 스캔 시간
+unsigned long lastLcdUpdate   = 0;  // 마지막 LCD 업데이트 시간
 
 unsigned long buzzerStart     = 0;
 bool          buzzerActive    = false;
@@ -81,26 +84,44 @@ void loop() {
     }
   }
 
-  // 소유자 초기화가 완료된 경우에만 상태 확인
+  // 소유자 상태 확인 (전역적으로 사용)
   bool ownerPresent = ownerInitialized && (now - lastOwnerSeen) < holdTime;
 
-  // 1행: Owner 상태
-  lcd.setCursor(0,0);
-  if (ownerPresent) {
-    unsigned long remainingTime = (holdTime - (now - lastOwnerSeen)) / 1000;
-    lcd.print("Owner ");
-    lcd.print(remainingTime);
-    lcd.print("s     ");
-  } else {
-    lcd.print("NO Owner ");
+  // LCD 업데이트 주기 제어
+  if (now - lastLcdUpdate >= lcdUpdatePeriod) {
+    lastLcdUpdate = now;
+    
+    // 1행: Owner 상태
+    lcd.setCursor(0,0);
+    if (ownerPresent) {
+      unsigned long remainingTime = (holdTime - (now - lastOwnerSeen)) / 1000;
+      lcd.print("Owner ");
+      lcd.print(remainingTime);
+      lcd.print("s     ");
+    } else {
+      lcd.print("NO Owner ");
+    }
+
+    // 2행: 알람 상태
+    lcd.setCursor(0,1);
+    if (buzzerActive) {
+      unsigned long elapsed = now - buzzerStart;
+      if (elapsed < buzzerDur) {
+        int sec = (buzzerDur - elapsed + 999) / 1000;
+        lcd.print("Remain:");
+        lcd.print(sec);
+        lcd.print("s   ");
+      } else {
+        noTone(buzzerPin);
+        buzzerActive = false;
+        lcd.print("No Motion       ");
+      }
+    } else {
+      lcd.print("No Motion       ");
+    }
   }
 
-  Serial.print("[Owner] ");
-  Serial.print(ownerPresent ? "Present, " : "NotFound, ");
-  Serial.print(now - lastOwnerSeen);
-  Serial.println(" ms ago");
-
-  // IMU 값 항상 읽기 (LCD 미표시)
+  // IMU 값 읽기
   if (IMU.accelerationAvailable()) {
     float x,y,z;
     IMU.readAcceleration(x,y,z);
@@ -130,28 +151,6 @@ void loop() {
       buzzerActive = false;
       Serial.println("[Buzzer] Stopped (owner returned)");
     }
-  }
-
-  // 2행: 알람 남은 시간 또는 No Motion
-  lcd.setCursor(0,1);
-  if (buzzerActive) {
-    unsigned long elapsed = now - buzzerStart;
-    if (elapsed < buzzerDur) {
-      int sec = (buzzerDur - elapsed + 999) / 1000;
-      lcd.print("Remain:");
-      lcd.print(sec);
-      lcd.print("s   ");
-      Serial.print("[Buzzer] Remain ");
-      Serial.print(sec);
-      Serial.println("s");
-    } else {
-      noTone(buzzerPin);
-      buzzerActive = false;
-      lcd.print("No Motion       ");
-      Serial.println("[Buzzer] Timeout Off");
-    }
-  } else {
-    lcd.print("No Motion       ");
   }
 
   delay(loopDelay);
